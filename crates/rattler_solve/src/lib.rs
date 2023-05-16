@@ -4,11 +4,13 @@
 //! exposes the functionality through the [`SolverBackend::solve`] function.
 
 mod libsolv;
+mod resolvelib;
 mod solver_backend;
 
 pub use libsolv::{
     cache_repodata as cache_libsolv_repodata, LibcByteSlice, LibsolvBackend, LibsolvRepoData,
 };
+pub use resolvelib::ResolvelibBackend;
 pub use solver_backend::SolverBackend;
 
 use rattler_conda_types::GenericVirtualPackage;
@@ -62,6 +64,7 @@ pub struct SolverTask<TAvailablePackagesIterator> {
 #[cfg(test)]
 mod test_libsolv {
     use crate::libsolv::LibsolvBackend;
+    use crate::resolvelib::ResolvelibBackend;
     use crate::{LibsolvRepoData, SolveError, SolverBackend, SolverTask};
     use rattler_conda_types::{
         Channel, ChannelConfig, GenericVirtualPackage, MatchSpec, NoArchType, PackageRecord,
@@ -164,18 +167,27 @@ mod test_libsolv {
         let available_packages = vec![repo_data, repo_data_noarch];
 
         let specs = vec![MatchSpec::from_str("python=3.9").unwrap()];
+        // let specs = vec![MatchSpec::from_str("numpy").unwrap()];
+
+        // let solver_task = SolverTask {
+        //     available_packages: available_packages
+        //         .iter()
+        //         .map(|records| LibsolvRepoData::from_records(records)),
+        //     specs,
+        //     locked_packages: Default::default(),
+        //     pinned_packages: Default::default(),
+        //     virtual_packages: Default::default(),
+        // };
 
         let solver_task = SolverTask {
-            available_packages: available_packages
-                .iter()
-                .map(|records| LibsolvRepoData::from_records(records)),
+            available_packages: available_packages.iter().map(|records| records.as_slice()),
             specs,
             locked_packages: Default::default(),
             pinned_packages: Default::default(),
             virtual_packages: Default::default(),
         };
 
-        let mut pkgs = LibsolvBackend
+        let mut pkgs = ResolvelibBackend
             .solve(solver_task)
             .unwrap()
             .into_iter()
@@ -435,7 +447,7 @@ mod test_libsolv {
     }
 
     #[test]
-    fn test_solve_dummy_repo_with_virtual_package() -> anyhow::Result<()> {
+    fn test_solve_dummy_repo_with_virtual_package() {
         let pkgs = solve(
             dummy_channel_json_path(),
             Vec::new(),
@@ -446,7 +458,8 @@ mod test_libsolv {
             }],
             &["bar"],
             false,
-        )?;
+        )
+        .unwrap();
 
         assert_eq!(pkgs.len(), 1);
 
@@ -454,7 +467,7 @@ mod test_libsolv {
         assert_eq!("bar", &info.package_record.name);
         assert_eq!("1.2.3", &info.package_record.version.to_string());
 
-        Ok(())
+        // Ok(())
     }
 
     #[test]
@@ -472,6 +485,46 @@ mod test_libsolv {
 
     #[cfg(test)]
     fn solve(
+        repo_path: String,
+        installed_packages: Vec<RepoDataRecord>,
+        virtual_packages: Vec<GenericVirtualPackage>,
+        match_specs: &[&str],
+        _with_solv_file: bool,
+    ) -> Result<Vec<RepoDataRecord>, SolveError> {
+        let repo_data = read_repodata(&repo_path);
+        let repo_data = repo_data.as_slice();
+
+        let specs = match_specs
+            .iter()
+            .map(|m| MatchSpec::from_str(m).unwrap())
+            .collect();
+
+        let task = SolverTask {
+            locked_packages: installed_packages,
+            virtual_packages,
+            available_packages: vec![repo_data].into_iter(),
+            specs,
+            pinned_packages: Vec::new(),
+        };
+
+        let pkgs = ResolvelibBackend.solve(task)?;
+
+        for pkg in pkgs.iter() {
+            println!(
+                "{} {} {}",
+                pkg.package_record.name, pkg.package_record.version, pkg.package_record.build
+            )
+        }
+
+        if pkgs.is_empty() {
+            println!("No packages in the environment!");
+        }
+
+        Ok(pkgs)
+    }
+
+    #[cfg(test)]
+    fn solve2(
         repo_path: String,
         installed_packages: Vec<RepoDataRecord>,
         virtual_packages: Vec<GenericVirtualPackage>,
