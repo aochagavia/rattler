@@ -148,20 +148,20 @@ fn parse_bracket_list(input: &str) -> Result<BracketVec, ParseMatchSpecError> {
 
 /// Strips the brackets part of the matchspec returning the rest of the matchspec and  the contents
 /// of the brackets as a `Vec<&str>`.
-fn strip_brackets(input: &str) -> Result<(Cow<'_, str>, BracketVec), ParseMatchSpecError> {
+fn strip_brackets(input: &str) -> Result<(&str, BracketVec), ParseMatchSpecError> {
     if let Some(matches) = lazy_regex::regex!(r#".*(?:(\[.*\]))"#).captures(input) {
         let bracket_str = matches.get(1).unwrap().as_str();
         let bracket_contents = parse_bracket_list(bracket_str)?;
 
         let input = if let Some(input) = input.strip_suffix(bracket_str) {
-            Cow::Borrowed(input)
+            input
         } else {
-            Cow::Owned(input.replace(bracket_str, ""))
+            panic!("Argh");
         };
 
         Ok((input, bracket_contents))
     } else {
-        Ok((input.into(), SmallVec::new()))
+        Ok((input, SmallVec::new()))
     }
 }
 
@@ -292,6 +292,54 @@ impl FromStr for NamelessMatchSpec {
 
         Ok(match_spec)
     }
+}
+
+/// FOO
+pub fn parse_name(input: &str) -> Result<&str, ParseMatchSpecError> {
+    // Step 1. Strip '#' and `if` statement
+    let (input, _comment) = strip_comment(input);
+    let (input, _if_clause) = strip_if(input);
+
+    // 2. Is the spec a tarball?
+    if is_package_file(input) {
+        let _url = match Url::parse(input) {
+            Ok(url) => url,
+            Err(_) => match PathBuf::from_str(input) {
+                Ok(path) => Url::from_file_path(path)
+                    .map_err(|_| ParseMatchSpecError::InvalidPackagePathOrUrl)?,
+                Err(_) => return Err(ParseMatchSpecError::InvalidPackagePathOrUrl),
+            },
+        };
+
+        // TODO: Implementing package file specs
+        unimplemented!()
+    }
+
+    // 3. Strip off brackets portion
+    let (input, _brackets) = strip_brackets(input.trim())?;
+
+    // 4. Strip off parens portion
+    // TODO: What is this? I've never seen in
+
+    // 5. Strip of '::' channel and namespace
+    let mut input_split = input.split(':').fuse();
+    let (input, _namespace, _channel_str) = match (
+        input_split.next(),
+        input_split.next(),
+        input_split.next(),
+        input_split.next(),
+    ) {
+        (Some(input), None, _, _) => (input, None, None),
+        (Some(namespace), Some(input), None, _) => (input, Some(namespace), None),
+        (Some(channel_str), Some(namespace), Some(input), None) => {
+            (input, Some(namespace), Some(channel_str))
+        }
+        _ => return Err(ParseMatchSpecError::InvalidNumberOfColons),
+    };
+
+    // Step 6. Strip off the package name from the input
+    let (name, _) = strip_package_name(input)?;
+    Ok(name)
 }
 
 /// Parses a conda match spec.
