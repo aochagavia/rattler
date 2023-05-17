@@ -22,6 +22,7 @@ impl<'a> SubdirData<'a> {
         &'this self,
         match_spec: &'this MatchSpec,
     ) -> impl Iterator<Item = &'a RepoDataRecord> + '_ {
+        // println!("querying for {:?}", match_spec);
         self.data
             .into_iter()
             .filter(|r| match_spec.matches(&r.package_record))
@@ -366,7 +367,7 @@ impl ResolvelibBackend {
         let resolver = Resolver::new(provider);
         let requirements1: Vec<_> = task.specs.iter().map(|ms| ms.to_string()).collect();
         let requirements2 = requirements1.iter().map(|s| s.as_str()).collect();
-        let mut result = resolver.resolve(requirements2).map_err(|err| {
+        let mut result = resolver.resolve_bounded(requirements2, 100_000).map_err(|err| {
             let msgs = match err {
                 ResolutionError::ResolutionImpossible(requirements) => requirements
                     .iter()

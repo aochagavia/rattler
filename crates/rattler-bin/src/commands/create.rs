@@ -2,6 +2,7 @@ use crate::global_multi_progress;
 use anyhow::Context;
 use futures::{stream, stream::FuturesUnordered, FutureExt, StreamExt, TryFutureExt, TryStreamExt};
 use indicatif::{HumanBytes, ProgressBar, ProgressState, ProgressStyle};
+use itertools::Itertools;
 use rattler::{
     install::{link_package, InstallDriver, InstallOptions, Transaction, TransactionOperation},
     package_cache::PackageCache,
@@ -14,7 +15,7 @@ use rattler_repodata_gateway::fetch::{
     CacheResult, DownloadProgress, FetchRepoDataError, FetchRepoDataOptions,
 };
 use rattler_repodata_gateway::sparse::SparseRepoData;
-use rattler_solve::{LibsolvRepoData, SolverBackend, SolverTask};
+use rattler_solve::{LibsolvRepoData, SolverBackend, SolverTask, SolveError};
 use reqwest::{Client, StatusCode};
 use std::{
     borrow::Cow,
@@ -150,9 +151,9 @@ pub async fn create(opt: Opt) -> anyhow::Result<()> {
     // need to solve. We do this by constructing a `SolverProblem`. This encapsulates all the
     // information required to be able to solve the problem.
     let solver_task = SolverTask {
-        available_packages: repodatas
-            .iter()
-            .map(|records| LibsolvRepoData::from_records(records)),
+        available_packages: repodatas.iter().map(|d| d.as_slice()),
+            // .iter()
+            // .map(|records| LibsolvRepoData::from_records(records)),
         locked_packages: installed_packages
             .iter()
             .map(|record| record.repodata_record.clone())
@@ -165,8 +166,30 @@ pub async fn create(opt: Opt) -> anyhow::Result<()> {
     // Next, use a solver to solve this specific problem. This provides us with all the operations
     // we need to apply to our environment to bring it up to date.
     let required_packages = wrap_in_progress("solving", move || {
-        rattler_solve::LibsolvBackend.solve(solver_task)
-    })?;
+        rattler_solve::ResolvelibBackend.solve(solver_task)
+    });
+
+    if let Err(SolveError::Unsolvable(errors)) = required_packages {
+        println!("Errors:");
+        for e in errors {
+            println!("{}", e);
+        }
+
+        return Err(anyhow::anyhow!("unsolvable"));
+    }
+
+    let required_packages = required_packages.unwrap();
+
+    let mut pp = required_packages.clone()
+        .into_iter()
+        .map(|record| record.into())
+        .sorted_by(|a: &RepoDataRecord, b: &RepoDataRecord| a.package_record.name.cmp(&b.package_record.name))
+        .collect::<Vec<RepoDataRecord>>();
+    
+    for p in pp {
+        println!("{:<30} {:<15} {:<10}", p.package_record.name, format!("{}", p.package_record.version), p.package_record.build);
+    }
+    
 
     // Construct a transaction to
     let transaction = Transaction::from_current_and_desired(
