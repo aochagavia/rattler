@@ -215,8 +215,8 @@ impl<'a> Provider for CondaProvider<'a> {
     fn find_matches(
         &self,
         identifier: Self::Identifier,
-        requirements: HashMap<Self::Identifier, Vec<Self::Requirement>>,
-        incompatibilities: HashMap<Self::Identifier, Vec<Self::Candidate>>,
+        requirements: &HashMap<Self::Identifier, Vec<Self::Requirement>>,
+        incompatibilities: &HashMap<Self::Identifier, Vec<Self::Candidate>>,
     ) -> Vec<Self::Candidate> {
         let requirements = &requirements[identifier];
         let bad_versions: HashSet<_> = incompatibilities[identifier]
@@ -289,6 +289,15 @@ impl<'a> Provider for CondaProvider<'a> {
         candidate
             .package_record
             .depends
+            .iter()
+            .map(|s| s.as_str())
+            .collect()
+    }
+
+    fn get_constraints(&self, candidate: Self::Candidate) -> Vec<Self::Requirement> {
+        candidate
+            .package_record
+            .constrains
             .iter()
             .map(|s| s.as_str())
             .collect()
