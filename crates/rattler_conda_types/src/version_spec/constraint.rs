@@ -47,7 +47,7 @@ fn parse_operator(s: &str) -> Option<(VersionOperator, &str)> {
     } else if let Some(rest) = s.strip_prefix('=') {
         Some((VersionOperator::StartsWith, rest))
     } else if s.starts_with(|c: char| c.is_alphanumeric()) {
-        Some((VersionOperator::Equals, s))
+        Some((VersionOperator::StartsWith, s))
     } else {
         None
     }
@@ -107,7 +107,7 @@ impl FromStr for Constraint {
             Err(ParseConstraintError::RegexConstraintsNotSupported)
         } else {
             Ok(Constraint::Comparison(
-                VersionOperator::Equals,
+                VersionOperator::StartsWith,
                 Version::from_str(s).map_err(ParseConstraintError::InvalidVersion)?,
             ))
         }
@@ -294,7 +294,7 @@ mod test {
     #[test]
     fn test_exact() {
         assert_eq!(
-            Constraint::from_str("1.2.3"),
+            Constraint::from_str("==1.2.3"),
             Ok(Constraint::Comparison(
                 VersionOperator::Equals,
                 Version::from_str("1.2.3").unwrap()

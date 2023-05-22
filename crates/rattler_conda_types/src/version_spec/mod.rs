@@ -237,8 +237,15 @@ mod tests {
         assert_eq!(
             VersionSpec::from_str("1.2.3"),
             Ok(VersionSpec::Operator(
-                VersionOperator::Equals,
+                VersionOperator::StartsWith,
                 Version::from_str("1.2.3").unwrap()
+            ))
+        );
+        assert_eq!(
+            VersionSpec::from_str("20232122"),
+            Ok(VersionSpec::Operator(
+                VersionOperator::StartsWith,
+                Version::from_str("20232122").unwrap()
             ))
         );
         assert_eq!(
