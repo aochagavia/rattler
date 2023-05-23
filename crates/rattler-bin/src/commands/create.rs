@@ -35,6 +35,9 @@ pub struct Opt {
 
     #[clap(required = true)]
     specs: Vec<String>,
+
+    #[clap(long)]
+    dry_run: bool,
 }
 
 pub async fn create(opt: Opt) -> anyhow::Result<()> {
@@ -150,9 +153,8 @@ pub async fn create(opt: Opt) -> anyhow::Result<()> {
     // need to solve. We do this by constructing a `SolverProblem`. This encapsulates all the
     // information required to be able to solve the problem.
     let solver_task = SolverTask {
-        available_packages: repodatas
-            .iter()
-            .map(|records| LibsolvRepoData::from_records(records)),
+        available_packages: repodatas.iter().map(|records| records.as_slice()),
+        // .map(|records| LibsolvRepoData::from_records(records)),
         locked_packages: installed_packages
             .iter()
             .map(|record| record.repodata_record.clone())
@@ -165,8 +167,23 @@ pub async fn create(opt: Opt) -> anyhow::Result<()> {
     // Next, use a solver to solve this specific problem. This provides us with all the operations
     // we need to apply to our environment to bring it up to date.
     let required_packages = wrap_in_progress("solving", move || {
-        rattler_solve::LibsolvBackend.solve(solver_task)
+        rattler_solve::ResolvelibBackend.solve(solver_task)
     })?;
+
+    if opt.dry_run {
+        println!("The following operations would be performed:");
+        let mut sorted = required_packages.clone();
+        sorted.sort_by(|a, b| a.package_record.name.cmp(&b.package_record.name));
+        for op in sorted {
+            println!(
+                "{: <30} {: >20} {: <20}",
+                op.package_record.name,
+                format!("{}", op.package_record.version),
+                op.package_record.build
+            );
+        }
+        return Ok(());
+    }
 
     // Construct a transaction to
     let transaction = Transaction::from_current_and_desired(

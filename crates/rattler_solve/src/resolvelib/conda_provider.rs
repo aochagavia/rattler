@@ -1,7 +1,7 @@
+use rattler_conda_types::{parse_matchspec_package_name, MatchSpec, RepoDataRecord, Version};
 use resolvelib_rs::{Criterion, Provider, RequirementInformation};
-use rattler_conda_types::{MatchSpec, RepoDataRecord, Version, parse_matchspec_package_name};
-use std::collections::{HashMap, HashSet};
 use std::cmp::Ordering;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
 pub struct SubdirData<'a> {
@@ -10,9 +10,7 @@ pub struct SubdirData<'a> {
 
 impl<'a> SubdirData<'a> {
     pub fn new(records: &'a [RepoDataRecord]) -> Self {
-        Self {
-            records
-        }
+        Self { records }
     }
 
     fn query<'this>(
@@ -31,7 +29,10 @@ pub struct CondaProvider<'a> {
 }
 
 impl<'a> CondaProvider<'a> {
-    pub fn new(subdir_data: Vec<SubdirData<'a>>, virtual_packages: HashMap<&'a str, &'a RepoDataRecord>) -> Self {
+    pub fn new(
+        subdir_data: Vec<SubdirData<'a>>,
+        virtual_packages: HashMap<&'a str, &'a RepoDataRecord>,
+    ) -> Self {
         Self {
             subdir_data,
             virtual_packages,
@@ -211,8 +212,20 @@ impl<'a> Provider for CondaProvider<'a> {
         identifier: Self::Identifier,
         _resolutions: &HashMap<Self::Identifier, Self::Candidate>,
         candidates: &HashMap<Self::Identifier, Criterion<Self::Requirement, Self::Candidate>>,
-        _backtrack_causes: &[RequirementInformation<Self::Requirement, Self::Candidate>],
+        backtrack_causes: &[RequirementInformation<Self::Requirement, Self::Candidate>],
     ) -> u64 {
+        // prefer the candidate that is a backtrack cause
+        for cause in backtrack_causes {
+            if self.identify_requirement(cause.requirement) == identifier {
+                return 0;
+            }
+            if cause.parent.is_some()
+                && identifier == self.identify_candidate(cause.parent.unwrap())
+            {
+                return 0;
+            }
+        }
+
         candidates[identifier].candidates.len() as u64
     }
 

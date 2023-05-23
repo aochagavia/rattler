@@ -1,11 +1,9 @@
 use std::collections::HashMap;
 
-use rattler_conda_types::{
-    PackageRecord, RepoDataRecord,
-};
+use conda_provider::{CondaProvider, SubdirData};
+use rattler_conda_types::{PackageRecord, RepoDataRecord};
 use resolvelib_rs::{NoOpReporter, ResolutionError, Resolver};
 use url::Url;
-use conda_provider::{CondaProvider, SubdirData};
 
 use crate::{SolveError, SolverTask};
 
@@ -74,17 +72,21 @@ impl ResolvelibBackend {
 
         let requirements1: Vec<_> = task.specs.iter().map(|ms| ms.to_string()).collect();
         let requirements2 = requirements1.iter().map(|s| s.as_str()).collect();
-        let mut result = resolver.resolve_bounded(requirements2, 100_000).map_err(|err| {
-            let msgs = match err {
-                ResolutionError::ResolutionImpossible(err) => err
-                    .unsatisfied_requirements()
-                    .iter()
-                    .map(|r| format!("nothing provides requested {}", r.requirement))
-                    .collect(),
-                ResolutionError::ResolutionTooDeep(_) => vec!["resolution too deep".to_string()],
-            };
-            SolveError::Unsolvable(msgs)
-        })?;
+        let mut result = resolver
+            .resolve_bounded(requirements2, 100_000)
+            .map_err(|err| {
+                let msgs = match err {
+                    ResolutionError::ResolutionImpossible(err) => err
+                        .unsatisfied_requirements()
+                        .iter()
+                        .map(|r| format!("nothing provides requested {}", r.requirement))
+                        .collect(),
+                    ResolutionError::ResolutionTooDeep(_) => {
+                        vec!["resolution too deep".to_string()]
+                    }
+                };
+                SolveError::Unsolvable(msgs)
+            })?;
 
         for value in result.mapping.values_mut() {
             if !value.file_name.ends_with(".conda") {
