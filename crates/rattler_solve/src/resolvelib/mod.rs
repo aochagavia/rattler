@@ -86,18 +86,22 @@ impl ResolvelibBackend {
                                 )
                             },
                             |requirement| format!("{requirement}"),
+                            true,
                         );
                         println!("{graphviz}");
 
                         err.graph()
                             .print_user_friendly_error(
+                                |record| record.package_record.name.clone(),
                                 |record| {
                                     format!(
                                         "{} {}",
-                                        record.package_record.name, record.package_record.version
+                                        record.package_record.version, record.package_record.build
                                     )
                                 },
+                                |record| (&record.package_record.version, &record.package_record.build),
                                 |requirement| format!("{requirement}"),
+                                |&requirement| requirement,
                             )
                             .to_string()
                     }
