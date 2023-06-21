@@ -36,7 +36,7 @@ pub enum SolveProblem {
     /// Express a dependency on source that is involved in explaining the
     /// problem.
     /// Not all dependency of package will appear, only enough to explain the
-    //. problem. It is not a problem in itself, only a part of the graph.
+    /// problem. It is not a problem in itself, only a part of the graph.
     PkgRequires { source: StringId, dep: String },
     /// Package conflict between two solvables of same package name (handled the same as
     /// [`SolveProblem::PkgConflicts`]).

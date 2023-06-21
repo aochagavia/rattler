@@ -2,6 +2,47 @@ use crate::decision_map::DecisionMap;
 use crate::pool::{MatchSpecId, Pool};
 use crate::solvable::SolvableId;
 use crate::solver::RuleId;
+use std::fmt::{Debug, Formatter};
+
+pub(crate) struct RuleDebug<'a> {
+    kind: RuleKind,
+    pool: &'a Pool,
+}
+
+impl Debug for RuleDebug<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self.kind {
+            RuleKind::InstallRoot => write!(f, "install root"),
+            RuleKind::Learnt(index) => write!(f, "learnt rule {index}"),
+            RuleKind::Requires(solvable_id, match_spec_id) => {
+                let match_spec = self.pool.resolve_match_spec(match_spec_id).to_string();
+                write!(
+                    f,
+                    "{} requires {match_spec}",
+                    self.pool.resolve_solvable_inner(solvable_id).display()
+                )
+            }
+            RuleKind::Constrains(s1, s2) => {
+                write!(
+                    f,
+                    "{} excludes {}",
+                    self.pool.resolve_solvable_inner(s1).display(),
+                    self.pool.resolve_solvable_inner(s2).display()
+                )
+            }
+            RuleKind::Forbids(s1, _) => {
+                let name = self
+                    .pool
+                    .resolve_solvable_inner(s1)
+                    .package()
+                    .record
+                    .name
+                    .as_str();
+                write!(f, "only one {name} allowed")
+            }
+        }
+    }
+}
 
 #[derive(Clone)]
 pub(crate) struct Rule {
@@ -27,33 +68,10 @@ impl Rule {
         rule
     }
 
-    pub fn debug(&self, pool: &Pool) {
-        match self.kind {
-            RuleKind::InstallRoot => println!("install root"),
-            RuleKind::Learnt(index) => println!("learnt rule {index}"),
-            RuleKind::Requires(solvable_id, match_spec_id) => {
-                let match_spec = pool.resolve_match_spec(match_spec_id).to_string();
-                println!(
-                    "{} requires {match_spec}",
-                    pool.resolve_solvable_inner(solvable_id).display()
-                )
-            }
-            RuleKind::Constrains(s1, s2) => {
-                println!(
-                    "{} excludes {}",
-                    pool.resolve_solvable_inner(s1).display(),
-                    pool.resolve_solvable_inner(s2).display()
-                )
-            }
-            RuleKind::Forbids(s1, _) => {
-                let name = pool
-                    .resolve_solvable_inner(s1)
-                    .package()
-                    .record
-                    .name
-                    .as_str();
-                println!("only one {name} allowed")
-            }
+    pub fn debug<'a>(&self, pool: &'a Pool) -> RuleDebug<'a> {
+        RuleDebug {
+            kind: self.kind,
+            pool,
         }
     }
 
