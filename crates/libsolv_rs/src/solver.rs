@@ -83,7 +83,7 @@ impl Solver {
     /// Create a solver, using the provided pool
     pub fn new(pool: Pool) -> Self {
         Self {
-            rules: vec![Rule::new(RuleKind::InstallRoot, &[], &pool)],
+            rules: Vec::new(),
             watches: WatchMap::new(),
             learnt_rules: Vec::new(),
             learnt_rules_start: RuleId(0),
@@ -111,7 +111,7 @@ impl Solver {
         // Clear state
         self.pool.root_solvable_mut().clear();
         self.decision_tracker.clear();
-        self.rules.clear();
+        self.rules = vec![Rule::new(RuleKind::InstallRoot, &[], &self.pool)];
         self.learnt_rules.clear();
 
         // Favored map
@@ -283,7 +283,7 @@ impl Solver {
     fn install_root_solvable(&mut self) -> u32 {
         assert!(self.decision_tracker.is_empty());
         self.decision_tracker
-            .try_add_decision(Decision::new(SolvableId::root(), true, RuleId::new(0)), 1)
+            .try_add_decision(Decision::new(SolvableId::root(), true, RuleId::install_root()), 1)
             .expect("bug: solvable was already decided!");
 
         // The root solvable is installed at level 1
