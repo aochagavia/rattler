@@ -9,6 +9,6 @@ The following packages are incompatible
             |-- B 42 | 100 would require
                 |-- C <100, which can be installed with any of the following options:
                     |-- C 99
-|-- C >100 cannot be installed because:
+|-- C >100 cannot be installed because there are no viable options:
     |-- C 101 | 103, which conflicts with the versions reported above.
 
