@@ -1,5 +1,5 @@
 use crate::decision_map::DecisionMap;
-use crate::solvable::SolvableId;
+use crate::id::SolvableId;
 use crate::solver::Decision;
 
 pub(crate) struct DecisionTracker {

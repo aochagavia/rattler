@@ -1,4 +1,4 @@
-use crate::solvable::SolvableId;
+use crate::id::SolvableId;
 use std::cmp::Ordering;
 
 /// Map of all available solvables

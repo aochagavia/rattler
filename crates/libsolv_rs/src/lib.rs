@@ -1,6 +1,7 @@
 mod conda_util;
 mod decision_map;
 mod decision_tracker;
+pub mod id;
 pub mod pool;
 pub mod problem;
 mod rules;

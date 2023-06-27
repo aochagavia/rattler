@@ -1,39 +1,15 @@
 use crate::decision_tracker::DecisionTracker;
-use crate::pool::{MatchSpecId, Pool, StringId};
+use crate::id::{RuleId, SolvableId};
+use crate::pool::Pool;
 use crate::problem::Problem;
 use crate::rules::{Literal, Rule, RuleKind};
-use crate::solvable::SolvableId;
 use crate::solve_jobs::SolveJobs;
 use crate::watch_map::WatchMap;
 
+use crate::id::{MatchSpecId, StringId};
 use rattler_conda_types::MatchSpec;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
-
-#[derive(Copy, Clone, PartialOrd, Ord, Eq, PartialEq, Debug, Hash)]
-pub(crate) struct RuleId(u32);
-
-impl RuleId {
-    pub(crate) fn new(index: usize) -> Self {
-        Self(index as u32)
-    }
-
-    pub(crate) fn install_root() -> Self {
-        Self(0)
-    }
-
-    pub(crate) fn index(self) -> usize {
-        self.0 as usize
-    }
-
-    fn is_null(self) -> bool {
-        self.0 == u32::MAX
-    }
-
-    pub(crate) fn null() -> RuleId {
-        RuleId(u32::MAX)
-    }
-}
 
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub(crate) struct Decision {
@@ -87,7 +63,7 @@ impl Solver {
             rules: Vec::new(),
             watches: WatchMap::new(),
             learnt_rules: Vec::new(),
-            learnt_rules_start: RuleId(0),
+            learnt_rules_start: RuleId::null(),
             learnt_why: Vec::new(),
             decision_tracker: DecisionTracker::new(pool.nsolvables()),
             pool,

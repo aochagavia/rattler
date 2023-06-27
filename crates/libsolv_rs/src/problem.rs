@@ -8,10 +8,10 @@ use petgraph::graph::{DiGraph, EdgeIndex, NodeIndex};
 use petgraph::visit::{Bfs, EdgeRef};
 use petgraph::Direction;
 
-use crate::pool::{MatchSpecId, Pool};
+use crate::id::{MatchSpecId, RuleId, SolvableId};
+use crate::pool::Pool;
 use crate::rules::RuleKind;
-use crate::solvable::SolvableId;
-use crate::solver::{RuleId, Solver};
+use crate::solver::Solver;
 
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum ProblemNode {
@@ -502,10 +502,7 @@ impl fmt::Display for DisplayUnsat<'_> {
                     let is_conflict_source = graph
                         .edges(candidate)
                         .any(|e| e.weight().try_requires().is_none());
-                    let is_leaf = graph
-                        .edges(candidate)
-                        .next()
-                        .is_none();
+                    let is_leaf = graph.edges(candidate).next().is_none();
 
                     if is_conflict_source {
                         writeln!(f, "{indent}|-- {} {version}, which conflicts with the versions reported above.", solvable.record.name)?;

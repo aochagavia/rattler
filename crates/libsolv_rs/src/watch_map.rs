@@ -1,6 +1,6 @@
+use crate::id::RuleId;
+use crate::id::SolvableId;
 use crate::rules::Rule;
-use crate::solvable::SolvableId;
-use crate::solver::RuleId;
 
 /// A map from solvables to the rules that are watching them
 pub(crate) struct WatchMap {

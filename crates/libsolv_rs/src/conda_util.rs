@@ -1,5 +1,5 @@
-use crate::pool::StringId;
-use crate::solvable::{Solvable, SolvableId};
+use crate::id::{SolvableId, StringId};
+use crate::solvable::Solvable;
 use rattler_conda_types::{MatchSpec, PackageRecord, Version};
 use std::cmp::Ordering;
 use std::collections::HashMap;

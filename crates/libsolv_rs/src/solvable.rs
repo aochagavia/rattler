@@ -1,35 +1,7 @@
-use crate::pool::{MatchSpecId, RepoId, StringId};
+use crate::id::MatchSpecId;
+use crate::id::{RepoId, StringId};
 use rattler_conda_types::{PackageRecord, Version};
 use std::fmt::{Display, Formatter};
-
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Ord, PartialOrd)]
-pub struct SolvableId(u32);
-
-impl SolvableId {
-    pub(crate) fn new(index: usize) -> Self {
-        Self(index as u32)
-    }
-
-    pub(crate) fn root() -> Self {
-        Self(0)
-    }
-
-    pub(crate) fn is_root(self) -> bool {
-        self.0 == 0
-    }
-
-    pub(crate) fn null() -> Self {
-        Self(u32::MAX)
-    }
-
-    pub(crate) fn is_null(self) -> bool {
-        self.0 == u32::MAX
-    }
-
-    pub(crate) fn index(self) -> usize {
-        self.0 as usize
-    }
-}
 
 pub(crate) struct SolvableDisplay<'a> {
     name: &'a str,
@@ -60,7 +32,6 @@ pub struct PackageSolvable {
     pub(crate) constrains: Vec<MatchSpecId>,
     pub(crate) record: &'static PackageRecord,
     pub(crate) name: StringId,
-    // pub version: StringId,
     pub metadata: SolvableMetadata,
 }
 

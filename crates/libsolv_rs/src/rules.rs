@@ -1,7 +1,8 @@
 use crate::decision_map::DecisionMap;
-use crate::pool::{MatchSpecId, Pool};
-use crate::solvable::SolvableId;
-use crate::solver::RuleId;
+use crate::id::MatchSpecId;
+use crate::id::RuleId;
+use crate::id::SolvableId;
+use crate::pool::Pool;
 use std::fmt::{Debug, Formatter};
 
 pub(crate) struct RuleDebug<'a> {

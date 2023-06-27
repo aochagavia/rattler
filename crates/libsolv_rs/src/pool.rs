@@ -1,48 +1,10 @@
 use crate::conda_util;
-use crate::solvable::{PackageSolvable, Solvable, SolvableId};
+use crate::id::{MatchSpecId, RepoId, SolvableId, StringId};
+use crate::solvable::{PackageSolvable, Solvable};
 use rattler_conda_types::{MatchSpec, PackageRecord};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::str::FromStr;
-
-#[derive(Clone, Copy, Eq, PartialEq, Hash)]
-pub struct RepoId(u32);
-
-impl RepoId {
-    fn new(id: u32) -> Self {
-        Self(id)
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct StringId {
-    value: u32,
-}
-
-impl StringId {
-    pub(crate) fn new(index: usize) -> Self {
-        Self {
-            value: index as u32,
-        }
-    }
-
-    pub(crate) fn index(self) -> usize {
-        self.value as usize
-    }
-}
-
-#[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
-pub struct MatchSpecId(u32);
-
-impl MatchSpecId {
-    fn new(index: usize) -> Self {
-        Self(index as u32)
-    }
-
-    pub(crate) fn index(self) -> usize {
-        self.0 as usize
-    }
-}
 
 pub struct Pool {
     pub(crate) solvables: Vec<Solvable>,
@@ -92,6 +54,7 @@ impl Pool {
         Self::default()
     }
 
+    // TODO: wat if we get rid of this method?
     pub fn new_repo(&mut self, _url: impl AsRef<str>) -> RepoId {
         let id = RepoId::new(self.total_repos);
         self.total_repos += 1;
@@ -107,8 +70,6 @@ impl Pool {
         let solvable_id = SolvableId::new(self.solvables.len());
         self.solvables
             .push(Solvable::new_package(repo_id, name, record));
-
-        assert!(repo_id.0 < self.total_repos);
 
         self.packages_by_name
             .entry(name)
@@ -307,7 +268,7 @@ impl Pool {
         }
     }
 
-    pub(crate) fn resolve_match_spec(&self, id: MatchSpecId) -> &MatchSpec {
+    pub fn resolve_match_spec(&self, id: MatchSpecId) -> &MatchSpec {
         &self.match_specs[id.index()]
     }
 
