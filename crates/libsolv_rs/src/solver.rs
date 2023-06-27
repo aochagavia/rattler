@@ -43,8 +43,8 @@ impl Display for TransactionKind {
     }
 }
 
-pub struct Solver {
-    pool: Pool,
+pub struct Solver<'a> {
+    pool: Pool<'a>,
 
     pub(crate) rules: Vec<Rule>,
     watches: WatchMap,
@@ -56,9 +56,9 @@ pub struct Solver {
     decision_tracker: DecisionTracker,
 }
 
-impl Solver {
+impl<'a> Solver<'a> {
     /// Create a solver, using the provided pool
-    pub fn new(pool: Pool) -> Self {
+    pub fn new(pool: Pool<'a>) -> Self {
         Self {
             rules: Vec::new(),
             watches: WatchMap::new(),
@@ -865,7 +865,7 @@ mod test {
     use rattler_conda_types::{PackageRecord, Version};
     use std::str::FromStr;
 
-    fn pool(packages: &[(&str, &str, Vec<&str>)]) -> Pool {
+    fn pool(packages: &[(&str, &str, Vec<&str>)]) -> Pool<'static> {
         let mut pool = Pool::new();
         let repo_id = pool.new_repo("");
 

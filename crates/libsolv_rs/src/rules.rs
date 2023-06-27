@@ -5,9 +5,10 @@ use crate::id::SolvableId;
 use crate::pool::Pool;
 use std::fmt::{Debug, Formatter};
 
+/// A representation of a rule that implements [`Debug`]
 pub(crate) struct RuleDebug<'a> {
     kind: RuleKind,
-    pool: &'a Pool,
+    pool: &'a Pool<'a>,
 }
 
 impl Debug for RuleDebug<'_> {

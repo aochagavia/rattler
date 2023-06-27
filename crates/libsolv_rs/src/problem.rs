@@ -370,7 +370,7 @@ pub struct DisplayUnsat<'a> {
     graph: ProblemGraph,
     merged_candidates: HashMap<SolvableId, Rc<MergedProblemNode>>,
     installable_set: HashSet<NodeIndex>,
-    pool: &'a Pool,
+    pool: &'a Pool<'a>,
 }
 
 impl<'a> DisplayUnsat<'a> {

@@ -6,8 +6,8 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::str::FromStr;
 
-pub struct Pool {
-    pub(crate) solvables: Vec<Solvable>,
+pub struct Pool<'a> {
+    pub(crate) solvables: Vec<Solvable<'a>>,
 
     /// The total amount of registered repos
     total_repos: u32,
@@ -30,7 +30,7 @@ pub struct Pool {
     pub(crate) packages_by_name: HashMap<StringId, Vec<SolvableId>>,
 }
 
-impl Default for Pool {
+impl<'a> Default for Pool<'a> {
     fn default() -> Self {
         Self {
             solvables: vec![Solvable::new_root()],
@@ -49,7 +49,7 @@ impl Default for Pool {
     }
 }
 
-impl Pool {
+impl<'a> Pool<'a> {
     pub fn new() -> Self {
         Self::default()
     }
@@ -62,7 +62,7 @@ impl Pool {
     }
 
     /// Adds a new solvable to a repo
-    pub fn add_package(&mut self, repo_id: RepoId, record: &'static PackageRecord) -> SolvableId {
+    pub fn add_package(&mut self, repo_id: RepoId, record: &'a PackageRecord) -> SolvableId {
         assert!(self.solvables.len() <= u32::MAX as usize);
 
         let name = self.intern_str(&record.name);
@@ -103,7 +103,7 @@ impl Pool {
         &mut self,
         repo_id: RepoId,
         solvable_id: SolvableId,
-        record: &'static PackageRecord,
+        record: &'a PackageRecord,
     ) {
         let name = self.intern_str(&record.name);
         self.solvables[solvable_id.index()] = Solvable::new_package(repo_id, name, record);
@@ -111,15 +111,15 @@ impl Pool {
 
     // This function does not take `self`, because otherwise we run into problems with borrowing
     // when we want to use it together with other pool functions
-    pub(crate) fn get_candidates<'a>(
-        match_specs: &'a [MatchSpec],
-        strings_to_ids: &'a HashMap<String, StringId>,
-        solvables: &'a [Solvable],
-        packages_by_name: &'a HashMap<StringId, Vec<SolvableId>>,
-        match_spec_to_candidates: &'a mut [Option<Vec<SolvableId>>],
+    pub(crate) fn get_candidates<'b>(
+        match_specs: &[MatchSpec],
+        strings_to_ids: &HashMap<String, StringId>,
+        solvables: &[Solvable],
+        packages_by_name: &HashMap<StringId, Vec<SolvableId>>,
+        match_spec_to_candidates: &'b mut [Option<Vec<SolvableId>>],
         favored_map: &HashMap<StringId, SolvableId>,
         match_spec_id: MatchSpecId,
-    ) -> &'a [SolvableId] {
+    ) -> &'b [SolvableId] {
         let candidates = match_spec_to_candidates[match_spec_id.index()].get_or_insert_with(|| {
             let match_spec = &match_specs[match_spec_id.index()];
             let match_spec_name = match_spec
@@ -161,14 +161,14 @@ impl Pool {
 
     // This function does not take `self`, because otherwise we run into problems with borrowing
     // when we want to use it together with other pool functions
-    pub(crate) fn get_forbidden<'a>(
-        match_specs: &'a [MatchSpec],
-        strings_to_ids: &'a HashMap<String, StringId>,
-        solvables: &'a [Solvable],
-        packages_by_name: &'a HashMap<StringId, Vec<SolvableId>>,
-        match_spec_to_forbidden: &'a mut [Option<Vec<SolvableId>>],
+    pub(crate) fn get_forbidden<'b>(
+        match_specs: &[MatchSpec],
+        strings_to_ids: &HashMap<String, StringId>,
+        solvables: &[Solvable],
+        packages_by_name: &HashMap<StringId, Vec<SolvableId>>,
+        match_spec_to_forbidden: &'b mut [Option<Vec<SolvableId>>],
         match_spec_id: MatchSpecId,
-    ) -> &'a [SolvableId] {
+    ) -> &'b [SolvableId] {
         let candidates = match_spec_to_forbidden[match_spec_id.index()].get_or_insert_with(|| {
             let match_spec = &match_specs[match_spec_id.index()];
             let match_spec_name = match_spec
@@ -242,7 +242,7 @@ impl Pool {
     /// Resolves the id to a solvable
     ///
     /// Panics if the solvable is not found in the pool
-    pub fn resolve_solvable_mut(&mut self, id: SolvableId) -> &mut PackageSolvable {
+    pub fn resolve_solvable_mut(&mut self, id: SolvableId) -> &mut PackageSolvable<'a> {
         self.resolve_solvable_inner_mut(id).package_mut()
     }
 
@@ -260,7 +260,7 @@ impl Pool {
     /// Resolves the id to a solvable
     ///
     /// Panics if the solvable is not found in the pool
-    pub(crate) fn resolve_solvable_inner_mut(&mut self, id: SolvableId) -> &mut Solvable {
+    pub(crate) fn resolve_solvable_inner_mut(&mut self, id: SolvableId) -> &mut Solvable<'a> {
         if id.index() < self.solvables.len() {
             &mut self.solvables[id.index()]
         } else {

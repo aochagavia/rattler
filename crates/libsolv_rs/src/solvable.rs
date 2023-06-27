@@ -26,16 +26,16 @@ impl Display for SolvableDisplay<'_> {
     }
 }
 
-pub struct PackageSolvable {
+pub struct PackageSolvable<'a> {
     pub(crate) repo_id: RepoId,
     pub(crate) dependencies: Vec<MatchSpecId>,
     pub(crate) constrains: Vec<MatchSpecId>,
-    pub(crate) record: &'static PackageRecord,
+    pub(crate) record: &'a PackageRecord,
     pub(crate) name: StringId,
     pub metadata: SolvableMetadata,
 }
 
-impl PackageSolvable {
+impl PackageSolvable<'_> {
     pub fn repo_id(&self) -> RepoId {
         self.repo_id
     }
@@ -46,27 +46,23 @@ pub struct SolvableMetadata {
     pub original_index: Option<usize>,
 }
 
-pub(crate) struct Solvable {
-    pub(crate) inner: SolvableInner,
+pub(crate) struct Solvable<'a> {
+    pub(crate) inner: SolvableInner<'a>,
 }
 
-pub(crate) enum SolvableInner {
+pub(crate) enum SolvableInner<'a> {
     Root(Vec<MatchSpecId>),
-    Package(PackageSolvable),
+    Package(PackageSolvable<'a>),
 }
 
-impl Solvable {
-    pub(crate) fn new_root() -> Self {
-        Self {
+impl<'a> Solvable<'a> {
+    pub(crate) fn new_root() -> Solvable<'static> {
+        Solvable {
             inner: SolvableInner::Root(Vec::new()),
         }
     }
 
-    pub(crate) fn new_package(
-        repo_id: RepoId,
-        name: StringId,
-        record: &'static PackageRecord,
-    ) -> Self {
+    pub(crate) fn new_package(repo_id: RepoId, name: StringId, record: &'a PackageRecord) -> Self {
         Self {
             inner: SolvableInner::Package(PackageSolvable {
                 repo_id,
@@ -108,7 +104,7 @@ impl Solvable {
         }
     }
 
-    pub(crate) fn get_package_mut(&mut self) -> Option<&mut PackageSolvable> {
+    pub(crate) fn get_package_mut<'b>(&'b mut self) -> Option<&'b mut PackageSolvable<'a>> {
         match &mut self.inner {
             SolvableInner::Root(_) => None,
             SolvableInner::Package(p) => Some(p),
@@ -119,7 +115,7 @@ impl Solvable {
         self.get_package().expect("unexpected root solvable")
     }
 
-    pub fn package_mut(&mut self) -> &mut PackageSolvable {
+    pub fn package_mut<'b>(&'b mut self) -> &'b mut PackageSolvable<'a> {
         self.get_package_mut().expect("unexpected root solvable")
     }
 }
