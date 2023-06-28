@@ -613,7 +613,7 @@ impl<'a> DisplayUnsat<'a> {
 
                         writeln!(
                             f,
-                            "{indent}{} {version} would require",
+                            "{indent}{} {version} would constrain",
                             solvable.record.name
                         )?;
 

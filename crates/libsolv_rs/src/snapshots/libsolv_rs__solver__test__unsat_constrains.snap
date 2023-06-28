@@ -8,6 +8,6 @@ The following packages are incompatible
         |-- B >=50, which can be installed with any of the following options:
             |-- B 50
 |-- C cannot be installed because there are no viable options:
-    |-- C 8 | 10 would require
+    |-- C 8 | 10 would constrain
         |-- B <50 , which conflicts with any installable versions previously reported
 
