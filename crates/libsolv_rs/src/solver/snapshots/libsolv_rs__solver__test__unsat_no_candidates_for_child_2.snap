@@ -1,5 +1,5 @@
 ---
-source: crates/libsolv_rs/src/solver.rs
+source: crates/libsolv_rs/src/solver/mod.rs
 expression: error
 ---
 A <1000 cannot be installed because there are no viable options:

@@ -1,63 +1,51 @@
-use crate::decision_map::DecisionMap;
 use crate::id::MatchSpecId;
 use crate::id::RuleId;
 use crate::id::SolvableId;
 use crate::pool::Pool;
+use crate::solver::decision_map::DecisionMap;
 use std::fmt::{Debug, Formatter};
 
-/// A representation of a rule that implements [`Debug`]
-pub(crate) struct RuleDebug<'a> {
-    kind: RuleKind,
-    pool: &'a Pool<'a>,
-}
-
-impl Debug for RuleDebug<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self.kind {
-            RuleKind::InstallRoot => write!(f, "install root"),
-            RuleKind::Learnt(index) => write!(f, "learnt rule {index}"),
-            RuleKind::Requires(solvable_id, match_spec_id) => {
-                let match_spec = self.pool.resolve_match_spec(match_spec_id).to_string();
-                write!(
-                    f,
-                    "{} requires {match_spec}",
-                    self.pool.resolve_solvable_inner(solvable_id).display()
-                )
-            }
-            RuleKind::Constrains(s1, s2) => {
-                write!(
-                    f,
-                    "{} excludes {}",
-                    self.pool.resolve_solvable_inner(s1).display(),
-                    self.pool.resolve_solvable_inner(s2).display()
-                )
-            }
-            RuleKind::Lock(locked, forbidden) => {
-                write!(
-                    f,
-                    "{} is locked, so {} is forbidden",
-                    self.pool.resolve_solvable_inner(locked).display(),
-                    self.pool.resolve_solvable_inner(forbidden).display()
-                )
-            }
-            RuleKind::ForbidMultipleInstances(s1, _) => {
-                let name = self
-                    .pool
-                    .resolve_solvable_inner(s1)
-                    .package()
-                    .record
-                    .name
-                    .as_str();
-                write!(f, "only one {name} allowed")
-            }
-        }
-    }
-}
-
+/// Represents a single clause in the SAT problem
+///
+/// # SAT terminology
+///
+/// Clauses consist of disjunctions of literals (i.e. a non-empty list of variables, potentially
+/// negated, joined by the logical "or" operator). Here are some examples:
+///
+/// - (¬A ∨ ¬B)
+/// - (¬A ∨ ¬B ∨ ¬C ∨ ¬D)
+/// - (¬A ∨ B ∨ C)
+/// - (root)
+///
+/// For additional clarity: if `(¬A ∨ ¬B)` is a clause, `¬A` and `¬B` are its literals, and `A` and
+/// `B` are variables. In our implementation, variables are represented by [`SolvableId`], and
+/// assignments are tracked in the [`DecisionMap`].
+///
+/// The solver will attempt to assign values to the variables involved in the problem in such a way
+/// that all clauses become true. If that turns out to be impossible, the problem is unsatisfiable.
+///
+/// Since we are not interested in general-purpose SAT solving, but are targeting the specific
+/// use-case of dependency resolution, we only support a limited set of clauses (see [`RuleKind`]
+/// for details).
+///
+/// # Implementation details
+///
+/// Since there are thousands of rules for a particular dependency resolution problem, we try to
+/// keep the [`Rule`] struct small. A naive implementation would store a `Vec<Literal>`, but here we
+/// represent a clause as a [`RuleKind`], which is more compact.
+///
+/// The [`Rule`] struct is also a node in two intrusive linked lists (i.e. linked lists in which the
+/// links are embedded in the struct that is being linked). In our SAT implementation, each rule
+/// tracks two literals present in its clause, to be notified when the value assigned to the
+/// variable has changed (this technique is known as _watches_). Rules that are tracking the same
+/// variable are grouped together in a linked list, so it becomes easy to notify them all.
 #[derive(Clone)]
 pub(crate) struct Rule {
+    // The ids of the solvables this rule is watching
     pub watched_literals: [SolvableId; 2],
+    // The ids of the next rule in each linked list that this rule is part of
     next_watches: [RuleId; 2],
+    // The clause itself
     pub(crate) kind: RuleKind,
 }
 
@@ -453,6 +441,55 @@ impl RuleKind {
                 } else {
                     Some([*id, candidates[0]])
                 }
+            }
+        }
+    }
+}
+
+/// A representation of a rule that implements [`Debug`]
+pub(crate) struct RuleDebug<'a> {
+    kind: RuleKind,
+    pool: &'a Pool<'a>,
+}
+
+impl Debug for RuleDebug<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self.kind {
+            RuleKind::InstallRoot => write!(f, "install root"),
+            RuleKind::Learnt(index) => write!(f, "learnt rule {index}"),
+            RuleKind::Requires(solvable_id, match_spec_id) => {
+                let match_spec = self.pool.resolve_match_spec(match_spec_id).to_string();
+                write!(
+                    f,
+                    "{} requires {match_spec}",
+                    self.pool.resolve_solvable_inner(solvable_id).display()
+                )
+            }
+            RuleKind::Constrains(s1, s2) => {
+                write!(
+                    f,
+                    "{} excludes {}",
+                    self.pool.resolve_solvable_inner(s1).display(),
+                    self.pool.resolve_solvable_inner(s2).display()
+                )
+            }
+            RuleKind::Lock(locked, forbidden) => {
+                write!(
+                    f,
+                    "{} is locked, so {} is forbidden",
+                    self.pool.resolve_solvable_inner(locked).display(),
+                    self.pool.resolve_solvable_inner(forbidden).display()
+                )
+            }
+            RuleKind::ForbidMultipleInstances(s1, _) => {
+                let name = self
+                    .pool
+                    .resolve_solvable_inner(s1)
+                    .package()
+                    .record
+                    .name
+                    .as_str();
+                write!(f, "only one {name} allowed")
             }
         }
     }

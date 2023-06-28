@@ -1,32 +1,24 @@
-use crate::decision_tracker::DecisionTracker;
+use crate::id::{MatchSpecId, StringId};
 use crate::id::{RuleId, SolvableId};
 use crate::pool::Pool;
 use crate::problem::Problem;
-use crate::rules::{Literal, Rule, RuleKind};
 use crate::solve_jobs::SolveJobs;
-use crate::watch_map::WatchMap;
 
-use crate::id::{MatchSpecId, StringId};
 use rattler_conda_types::MatchSpec;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 
-#[derive(Copy, Clone, Eq, PartialEq)]
-pub(crate) struct Decision {
-    pub(crate) solvable_id: SolvableId,
-    pub(crate) value: bool,
-    pub(crate) derived_from: RuleId,
-}
+use decision::Decision;
+use decision_tracker::DecisionTracker;
+use rule::{Literal, Rule, RuleKind};
+use watch_map::WatchMap;
 
-impl Decision {
-    pub(crate) fn new(solvable: SolvableId, value: bool, derived_from: RuleId) -> Self {
-        Self {
-            solvable_id: solvable,
-            value,
-            derived_from,
-        }
-    }
-}
+// TODO: remove pub from this
+mod decision;
+pub(crate) mod decision_map;
+mod decision_tracker;
+pub(crate) mod rule;
+mod watch_map;
 
 pub struct Transaction {
     pub steps: Vec<(SolvableId, TransactionKind)>,

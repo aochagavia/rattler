@@ -10,7 +10,7 @@ use petgraph::Direction;
 
 use crate::id::{MatchSpecId, RuleId, SolvableId};
 use crate::pool::Pool;
-use crate::rules::RuleKind;
+use crate::solver::rule::RuleKind;
 use crate::solver::Solver;
 
 #[derive(Copy, Clone, Eq, PartialEq)]

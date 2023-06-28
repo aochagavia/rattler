@@ -1,6 +1,6 @@
-use crate::decision_map::DecisionMap;
 use crate::id::SolvableId;
-use crate::solver::Decision;
+use crate::solver::decision::Decision;
+use crate::solver::decision_map::DecisionMap;
 
 pub(crate) struct DecisionTracker {
     map: DecisionMap,
