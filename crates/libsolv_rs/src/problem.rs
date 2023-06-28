@@ -499,15 +499,43 @@ impl fmt::Display for DisplayUnsat<'_> {
                         solvable.record.version.to_string()
                     };
 
-                    let is_conflict_source = graph
-                        .edges(candidate)
-                        .any(|e| e.weight().try_requires().is_none());
+                    let already_installed = graph.edges(candidate).any(|e| {
+                        e.weight() == &ProblemEdge::Conflict(Conflict::ForbidMultipleInstances)
+                    });
+                    let constrains_conflict = graph.edges(candidate).any(|e| {
+                        matches!(e.weight(), ProblemEdge::Conflict(Conflict::Constrains(_)))
+                    });
                     let is_leaf = graph.edges(candidate).next().is_none();
 
-                    if is_conflict_source {
-                        writeln!(f, "{indent}|-- {} {version}, which conflicts with the versions reported above.", solvable.record.name)?;
-                    } else if is_leaf {
+                    if is_leaf {
                         writeln!(f, "{indent}|-- {} {version}", solvable.record.name)?;
+                    } else if already_installed {
+                        writeln!(f, "{indent}|-- {} {version}, which conflicts with the versions reported above.", solvable.record.name)?;
+                    } else if constrains_conflict {
+                        let match_specs = graph
+                            .edges(candidate)
+                            .flat_map(|e| match e.weight() {
+                                ProblemEdge::Conflict(Conflict::Constrains(match_spec_id)) => {
+                                    Some(match_spec_id)
+                                }
+                                _ => None,
+                            })
+                            .dedup();
+
+                        writeln!(
+                            f,
+                            "{indent}|-- {} {version} would require",
+                            solvable.record.name
+                        )?;
+
+                        for &match_spec_id in match_specs {
+                            let match_spec = self.pool.resolve_match_spec(match_spec_id);
+                            writeln!(
+                                f,
+                                "{indent}    |-- {} , which conflicts with any installable versions previously reported",
+                                match_spec
+                            )?;
+                        }
                     } else {
                         writeln!(
                             f,

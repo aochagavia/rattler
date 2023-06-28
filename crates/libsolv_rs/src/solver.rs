@@ -864,42 +864,53 @@ mod test {
     use super::*;
     use rattler_conda_types::{PackageRecord, Version};
     use std::str::FromStr;
+    use crate::id::RepoId;
+
+    fn package(name: &str, version: &str, deps: &[&str], constrains: &[&str]) -> PackageRecord {
+        PackageRecord {
+            arch: None,
+            build: "".to_string(),
+            build_number: 0,
+            constrains: constrains.iter().map(|s| s.to_string()).collect(),
+            depends: deps.iter().map(|s| s.to_string()).collect(),
+            features: None,
+            legacy_bz2_md5: None,
+            legacy_bz2_size: None,
+            license: None,
+            license_family: None,
+            md5: None,
+            name: name.to_string(),
+            noarch: Default::default(),
+            platform: None,
+            sha256: None,
+            size: None,
+            subdir: "".to_string(),
+            timestamp: None,
+            track_features: vec![],
+            version: version.parse().unwrap(),
+        }
+    }
+
+    fn add_package(pool: &mut Pool, record: PackageRecord) {
+        let record = Box::leak(Box::new(record));
+        let solvable_id = pool.add_package(RepoId::new(0), record);
+
+        for dep in &record.depends {
+            pool.add_dependency(solvable_id, dep.to_string());
+        }
+
+        for constrain in &record.constrains {
+            pool.add_constrains(solvable_id, constrain.to_string());
+        }
+    }
 
     fn pool(packages: &[(&str, &str, Vec<&str>)]) -> Pool<'static> {
         let mut pool = Pool::new();
-        let repo_id = pool.new_repo("");
-
         for (pkg_name, version, deps) in packages {
             let pkg_name = *pkg_name;
             let version = *version;
-            let record = Box::new(PackageRecord {
-                arch: None,
-                build: "".to_string(),
-                build_number: 0,
-                constrains: vec![],
-                depends: deps.iter().map(|s| s.to_string()).collect(),
-                features: None,
-                legacy_bz2_md5: None,
-                legacy_bz2_size: None,
-                license: None,
-                license_family: None,
-                md5: None,
-                name: pkg_name.to_string(),
-                noarch: Default::default(),
-                platform: None,
-                sha256: None,
-                size: None,
-                subdir: "".to_string(),
-                timestamp: None,
-                track_features: vec![],
-                version: version.parse().unwrap(),
-            });
-
-            let solvable_id = pool.add_package(repo_id, Box::leak(record));
-
-            for &dep in deps {
-                pool.add_dependency(solvable_id, dep.to_string());
-            }
+            let record = package(pkg_name, version, deps, &[]);
+            add_package(&mut pool, record);
         }
 
         pool
@@ -1338,7 +1349,6 @@ mod test {
         insta::assert_snapshot!(error);
     }
 
-    // TODO: this isn't testing for compression yet!
     #[test]
     fn test_unsat_applies_graph_compression() {
         let pool = pool(&[
@@ -1353,6 +1363,24 @@ mod test {
         ]);
 
         let jobs = install(&["A", "C>100"]);
+
+        let error = solve_unsat(pool, jobs);
+        insta::assert_snapshot!(error);
+    }
+
+    #[test]
+    fn test_unsat_constrains() {
+        let mut pool = pool(&[
+            ("A", "10", vec!["B>=50"]),
+            ("A", "9", vec!["B>=50"]),
+            ("B", "50", vec![]),
+            ("B", "42", vec![]),
+        ]);
+
+        add_package(&mut pool, package("C", "10", &[], &["B<50"]));
+        add_package(&mut pool, package("C", "8", &[], &["B<50"]));
+
+        let jobs = install(&["A", "C"]);
 
         let error = solve_unsat(pool, jobs);
         insta::assert_snapshot!(error);
