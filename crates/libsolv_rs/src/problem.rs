@@ -121,15 +121,16 @@ impl Problem {
                         }
                     }
                 }
+                RuleKind::Lock(locked, forbidden) => {
+                    let node2_id = Self::add_node(&mut graph, &mut nodes, forbidden);
+                    let conflict = Conflict::Locked(locked);
+                    graph.add_edge(root_node, node2_id, ProblemEdge::Conflict(conflict));
+                }
                 RuleKind::ForbidMultipleInstances(instance1_id, instance2_id) => {
                     let node1_id = Self::add_node(&mut graph, &mut nodes, instance1_id);
                     let node2_id = Self::add_node(&mut graph, &mut nodes, instance2_id);
 
-                    let conflict = if instance1_id.is_root() {
-                        Conflict::Locked(instance2_id)
-                    } else {
-                        Conflict::ForbidMultipleInstances
-                    };
+                    let conflict = Conflict::ForbidMultipleInstances;
                     graph.add_edge(node1_id, node2_id, ProblemEdge::Conflict(conflict));
                 }
                 RuleKind::Constrains(package_id, dep_id) => {

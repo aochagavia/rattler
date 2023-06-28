@@ -32,6 +32,14 @@ impl Debug for RuleDebug<'_> {
                     self.pool.resolve_solvable_inner(s2).display()
                 )
             }
+            RuleKind::Lock(locked, forbidden) => {
+                write!(
+                    f,
+                    "{} is locked, so {} is forbidden",
+                    self.pool.resolve_solvable_inner(locked).display(),
+                    self.pool.resolve_solvable_inner(forbidden).display()
+                )
+            }
             RuleKind::ForbidMultipleInstances(s1, _) => {
                 let name = self
                     .pool
@@ -150,7 +158,9 @@ impl Rule {
         match self.kind {
             RuleKind::InstallRoot => unreachable!(),
             RuleKind::Learnt(index) => {
-                // TODO: this is probably not going to cut it for performance
+                // TODO: we might want to do something else for performance, like keeping the whole
+                // literal in `self.watched_literals`, to avoid lookups... But first we should
+                // benchmark!
                 let &w1 = learnt_rules[index]
                     .iter()
                     .find(|l| l.solvable_id == self.watched_literals[0])
@@ -161,8 +171,9 @@ impl Rule {
                     .unwrap();
                 [w1, w2]
             }
-            RuleKind::ForbidMultipleInstances(_, _) => literals(false, false),
-            RuleKind::Constrains(_, _) => literals(false, false),
+            RuleKind::Constrains(..)
+            | RuleKind::ForbidMultipleInstances(..)
+            | RuleKind::Lock(..) => literals(false, false),
             RuleKind::Requires(solvable_id, _) => {
                 if self.watched_literals[0] == solvable_id {
                     literals(false, true)
@@ -196,8 +207,9 @@ impl Rule {
                 .cloned()
                 .find(|&l| can_watch(l))
                 .map(|l| l.solvable_id),
-            RuleKind::ForbidMultipleInstances(_, _) => None,
-            RuleKind::Constrains(_, _) => None,
+            RuleKind::Constrains(..)
+            | RuleKind::ForbidMultipleInstances(..)
+            | RuleKind::Lock(..) => None,
             RuleKind::Requires(solvable_id, match_spec_id) => {
                 // The solvable that added this rule
                 let solvable_lit = Literal {
@@ -252,7 +264,7 @@ impl Rule {
                 )
                 .collect()
             }
-            RuleKind::ForbidMultipleInstances(s1, s2) => {
+            RuleKind::Constrains(s1, s2) | RuleKind::ForbidMultipleInstances(s1, s2) => {
                 vec![
                     Literal {
                         solvable_id: s1,
@@ -264,14 +276,14 @@ impl Rule {
                     },
                 ]
             }
-            RuleKind::Constrains(s1, s2) => {
+            RuleKind::Lock(_, s) => {
                 vec![
                     Literal {
-                        solvable_id: s1,
+                        solvable_id: SolvableId::root(),
                         negate: true,
                     },
                     Literal {
-                        solvable_id: s2,
+                        solvable_id: s,
                         negate: true,
                     },
                 ]
@@ -279,7 +291,7 @@ impl Rule {
         }
     }
 
-    /// Returns the list of variables that imply that the provided solvable should be decided
+    /// Returns the list of literals that imply that the provided solvable should be decided
     pub fn conflict_causes(
         &self,
         variable: SolvableId,
@@ -313,7 +325,7 @@ impl Rule {
                 .filter(|&l| variable != l.solvable_id)
                 .collect()
             }
-            RuleKind::ForbidMultipleInstances(s1, s2) => {
+            RuleKind::Constrains(s1, s2) | RuleKind::ForbidMultipleInstances(s1, s2) => {
                 let cause = if variable == s1 { s2 } else { s1 };
 
                 vec![Literal {
@@ -321,9 +333,12 @@ impl Rule {
                     negate: true,
                 }]
             }
-
-            RuleKind::Constrains(s1, s2) => {
-                let cause = if variable == s1 { s2 } else { s1 };
+            RuleKind::Lock(_, s) => {
+                let cause = if variable.is_root() {
+                    s
+                } else {
+                    SolvableId::root()
+                };
 
                 vec![Literal {
                     solvable_id: cause,
@@ -362,21 +377,44 @@ impl Literal {
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) enum RuleKind {
+    /// An assertion that the root solvable must be installed
+    ///
+    /// In SAT terms: (root)
     InstallRoot,
     /// The solvable requires the candidates associated to the match spec
     ///
     /// In SAT terms: (¬A ∨ B1 ∨ B2 ∨ ... ∨ B99), where B1 to B99 represent the possible candidates
-    /// for the provided match spec.
+    /// for the provided match spec
     Requires(SolvableId, MatchSpecId),
-    /// The left solvable forbids installing the right solvable
+    /// Ensures only a single version of a package is installed
     ///
-    /// Used to ensure only a single version of a package is installed
+    /// We generate one [`RuleKind::ForbidMultipleInstances`] rule for each possible combination of packages
+    /// under the same name. The rule itself forbids two solvables from being installed at the same
+    /// time
     ///
     /// In SAT terms: (¬A ∨ ¬B)
     ForbidMultipleInstances(SolvableId, SolvableId),
-    /// Similar to forbid, but created due to a constrains relationship
+    /// Forbids packages that do not satisfy a solvable's constrains
+    ///
+    /// For each constrains relationship in a package, we determine all the candidates that do _not_
+    /// satisfy it, and create one [`RuleKind::Constrains`]. The rule itself forbids two solvables from being
+    /// installed at the same time, just as [`RuleKind::ForbidMultipleInstances`], but it pays off to have
+    /// a separate variant for user-friendly error messages
+    ///
+    /// In SAT terms: (¬A ∨ ¬B)
     Constrains(SolvableId, SolvableId),
-    /// Learnt rule
+    /// Forbids the package on the right-hand side
+    ///
+    /// The package on the left-hand side is not part of the rule, but just context to know which
+    /// exact package was locked (necessary for user-friendly error messages)
+    ///
+    /// In SAT terms: (¬root ∨ ¬B). Note that we could encode this as an assertion (¬B), but that
+    /// would require additional logic in the solver.
+    Lock(SolvableId, SolvableId),
+    /// A rule learnt during solving
+    ///
+    /// The `usize` is an index that can be used to retrieve the rule's literals, which are stored
+    /// elsewhere to prevent the size of [`Rule`] from blowing up
     Learnt(usize),
 }
 
@@ -388,8 +426,10 @@ impl RuleKind {
     ) -> Option<[SolvableId; 2]> {
         match self {
             RuleKind::InstallRoot => None,
-            RuleKind::Constrains(s1, s2) => Some([*s1, *s2]),
-            RuleKind::ForbidMultipleInstances(s1, s2) => Some([*s1, *s2]),
+            RuleKind::Constrains(s1, s2) | RuleKind::ForbidMultipleInstances(s1, s2) => {
+                Some([*s1, *s2])
+            }
+            RuleKind::Lock(_, s) => Some([SolvableId::root(), *s]),
             RuleKind::Learnt(index) => {
                 let literals = &learnt_rules[*index];
                 debug_assert!(!literals.is_empty());

@@ -128,7 +128,7 @@ impl<'a> Solver<'a> {
                 for &other_candidate in other_candidates {
                     if other_candidate != locked_solvable_id {
                         self.rules.push(Rule::new(
-                            RuleKind::ForbidMultipleInstances(SolvableId::root(), other_candidate),
+                            RuleKind::Lock(locked_solvable_id, other_candidate),
                             &self.learnt_rules,
                             &self.pool,
                         ));
@@ -585,10 +585,9 @@ impl<'a> Solver<'a> {
 
                         if decided {
                             match rule.kind {
-                                RuleKind::InstallRoot
-                                | RuleKind::Requires(_, _)
-                                | RuleKind::Constrains(_, _)
-                                | RuleKind::Learnt(_) => {
+                                // Skip logging for ForbidMultipleInstances, which is so noisy
+                                RuleKind::ForbidMultipleInstances(..) => {}
+                                _ => {
                                     println!(
                                         "Propagate {} = {}. {:?}",
                                         self.pool
@@ -598,8 +597,6 @@ impl<'a> Solver<'a> {
                                         rule.debug(&self.pool),
                                     );
                                 }
-                                // Skip logging for forbids, which is so noisy
-                                RuleKind::ForbidMultipleInstances(..) => {}
                             }
                         }
                     }
