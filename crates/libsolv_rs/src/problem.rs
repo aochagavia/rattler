@@ -197,7 +197,8 @@ impl Problem {
         let graph = self.graph(solver);
 
         // TODO: remove
-        graph.graphviz(solver.pool());
+        graph.graphviz(solver.pool(), false);
+        graph.graphviz(solver.pool(), true);
 
         DisplayUnsat::new(graph, solver.pool())
     }
@@ -210,54 +211,74 @@ pub struct ProblemGraph {
 }
 
 impl ProblemGraph {
-    fn graphviz(&self, pool: &Pool) {
+    fn graphviz(&self, pool: &Pool, simplify: bool) {
         let graph = &self.graph;
 
+        let merged_nodes = if simplify {
+            self.simplify(pool)
+        } else {
+            HashMap::new()
+        };
+
         println!("digraph {{");
-        let mut bfs = Bfs::new(&graph, self.root_node);
-        while let Some(nx) = bfs.next(&graph) {
-            match graph.node_weight(nx).as_ref().unwrap() {
-                ProblemNode::Solvable(id) => {
-                    let solvable = pool.resolve_solvable_inner(*id);
-                    for edge in graph.edges_directed(nx, Direction::Outgoing) {
-                        let target = *graph.node_weight(edge.target()).unwrap();
+        for nx in graph.node_indices() {
+            let id = match graph.node_weight(nx).as_ref().unwrap() {
+                ProblemNode::Solvable(id) => *id,
+                _ => continue,
+            };
 
-                        let color = match edge.weight() {
-                            ProblemEdge::Requires(_)
-                                if target != ProblemNode::UnresolvedDependency =>
-                            {
-                                "black"
-                            }
-                            _ => "red",
-                        };
-
-                        let label = match edge.weight() {
-                            ProblemEdge::Requires(match_spec_id)
-                            | ProblemEdge::Conflict(Conflict::Constrains(match_spec_id)) => {
-                                pool.resolve_match_spec(*match_spec_id).to_string()
-                            }
-                            ProblemEdge::Conflict(Conflict::ForbidMultipleInstances)
-                            | ProblemEdge::Conflict(Conflict::Locked(_)) => {
-                                "already installed".to_string()
-                            }
-                        };
-
-                        let target = match target {
-                            ProblemNode::Solvable(solvable_2) => pool
-                                .resolve_solvable_inner(solvable_2)
-                                .display()
-                                .to_string(),
-                            ProblemNode::UnresolvedDependency => "unresolved".to_string(),
-                        };
-
-                        println!(
-                            "\"{}\" -> \"{}\"[color={color}, label=\"{label}\"];",
-                            solvable.display(),
-                            target
-                        );
-                    }
+            // If this is a merged node, skip it unless it is the first one in the group
+            if let Some(merged) = merged_nodes.get(&id) {
+                if id != merged.ids[0] {
+                    continue;
                 }
-                ProblemNode::UnresolvedDependency => {}
+            }
+
+            let solvable = pool.resolve_solvable_inner(id);
+            let mut added_edges = HashSet::new();
+            for edge in graph.edges_directed(nx, Direction::Outgoing) {
+                let target = *graph.node_weight(edge.target()).unwrap();
+
+                let color = match edge.weight() {
+                    ProblemEdge::Requires(_) if target != ProblemNode::UnresolvedDependency => {
+                        "black"
+                    }
+                    _ => "red",
+                };
+
+                let label = match edge.weight() {
+                    ProblemEdge::Requires(match_spec_id)
+                    | ProblemEdge::Conflict(Conflict::Constrains(match_spec_id)) => {
+                        pool.resolve_match_spec(*match_spec_id).to_string()
+                    }
+                    ProblemEdge::Conflict(Conflict::ForbidMultipleInstances)
+                    | ProblemEdge::Conflict(Conflict::Locked(_)) => "already installed".to_string(),
+                };
+
+                let target = match target {
+                    ProblemNode::Solvable(mut solvable_2) => {
+                        // If the target node has been merged, replace it by the first id in the group
+                        if let Some(merged) = merged_nodes.get(&solvable_2) {
+                            solvable_2 = merged.ids[0];
+
+                            // Skip the edge if we would be adding a duplicate
+                            if !added_edges.insert(solvable_2) {
+                                continue;
+                            }
+                        }
+
+                        pool.resolve_solvable_inner(solvable_2)
+                            .display()
+                            .to_string()
+                    }
+                    ProblemNode::UnresolvedDependency => "unresolved".to_string(),
+                };
+
+                println!(
+                    "\"{}\" -> \"{}\"[color={color}, label=\"{label}\"];",
+                    solvable.display(),
+                    target
+                );
             }
         }
         println!("}}");
