@@ -388,18 +388,18 @@ pub(crate) enum RuleKind {
     Requires(SolvableId, MatchSpecId),
     /// Ensures only a single version of a package is installed
     ///
-    /// We generate one [`RuleKind::ForbidMultipleInstances`] rule for each possible combination of packages
-    /// under the same name. The rule itself forbids two solvables from being installed at the same
-    /// time
+    /// We generate one [`RuleKind::ForbidMultipleInstances`] rule for each possible combination of
+    /// packages under the same name. The rule itself forbids two solvables from being installed at
+    /// the same time
     ///
     /// In SAT terms: (¬A ∨ ¬B)
     ForbidMultipleInstances(SolvableId, SolvableId),
     /// Forbids packages that do not satisfy a solvable's constrains
     ///
     /// For each constrains relationship in a package, we determine all the candidates that do _not_
-    /// satisfy it, and create one [`RuleKind::Constrains`]. The rule itself forbids two solvables from being
-    /// installed at the same time, just as [`RuleKind::ForbidMultipleInstances`], but it pays off to have
-    /// a separate variant for user-friendly error messages
+    /// satisfy it, and create one [`RuleKind::Constrains`]. The rule itself forbids two solvables
+    /// from being installed at the same time, just as [`RuleKind::ForbidMultipleInstances`], but it
+    /// pays off to have a separate variant for user-friendly error messages
     ///
     /// In SAT terms: (¬A ∨ ¬B)
     Constrains(SolvableId, SolvableId),
