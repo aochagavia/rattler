@@ -4,7 +4,7 @@ use std::fmt::Formatter;
 use std::rc::Rc;
 
 use itertools::Itertools;
-use petgraph::graph::{DiGraph, EdgeIndex, NodeIndex};
+use petgraph::graph::{DiGraph, EdgeIndex, EdgeReference, NodeIndex};
 use petgraph::visit::{Bfs, DfsPostOrder, EdgeRef};
 use petgraph::Direction;
 
@@ -392,12 +392,57 @@ impl ProblemGraph {
 
         installable
     }
+
+    fn get_missing_set(&self) -> HashSet<NodeIndex> {
+        // Definition: a package is missing if it is not involved in any conflicts, yet it is not
+        // installable
+
+        let mut missing = HashSet::new();
+        match self.unresolved_node {
+            None => return missing,
+            Some(nx) => missing.insert(nx),
+        };
+
+        // Algorithm: propagate missing bottom-up
+        let mut dfs = DfsPostOrder::new(&self.graph, self.root_node);
+        while let Some(nx) = dfs.next(&self.graph) {
+            let outgoing_conflicts = self
+                .graph
+                .edges_directed(nx, Direction::Outgoing)
+                .any(|e| matches!(e.weight(), ProblemEdge::Conflict(_)));
+            if outgoing_conflicts {
+                // Nodes with outgoing conflicts aren't missing
+                continue;
+            }
+
+            // Edges grouped by dependency
+            let dependencies = self
+                .graph
+                .edges_directed(nx, Direction::Outgoing)
+                .map(|e| match e.weight() {
+                    ProblemEdge::Requires(match_spec_id) => (match_spec_id, e.target()),
+                    ProblemEdge::Conflict(_) => unreachable!(),
+                })
+                .group_by(|(&match_spec_id, _)| match_spec_id);
+
+            // Missing if at least one dependency is missing
+            if dependencies
+                .into_iter()
+                .any(|(_, mut deps)| deps.all(|(_, target)| missing.contains(&target)))
+            {
+                missing.insert(nx);
+            }
+        }
+
+        missing
+    }
 }
 
 pub struct DisplayUnsat<'a> {
     graph: ProblemGraph,
     merged_candidates: HashMap<SolvableId, Rc<MergedProblemNode>>,
     installable_set: HashSet<NodeIndex>,
+    missing_set: HashSet<NodeIndex>,
     pool: &'a Pool<'a>,
 }
 
@@ -405,32 +450,48 @@ impl<'a> DisplayUnsat<'a> {
     pub fn new(graph: ProblemGraph, pool: &'a Pool) -> Self {
         let merged_candidates = graph.simplify(pool);
         let installable_set = graph.get_installable_set();
+        let missing_set = graph.get_missing_set();
 
         Self {
             graph,
             merged_candidates,
             installable_set,
+            missing_set,
             pool,
         }
     }
-}
 
-impl fmt::Display for DisplayUnsat<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let graph = &self.graph.graph;
-        let installable_nodes = &self.installable_set;
-        let mut reported: HashSet<SolvableId> = HashSet::new();
+    fn get_indent(depth: usize, top_level_indent: bool) -> String {
+        let depth_correction = if depth > 0 && !top_level_indent { 1 } else { 0 };
 
+        let mut indent = " ".repeat((depth - depth_correction) * 4);
+
+        let display_tree_char = depth != 0 || top_level_indent;
+        if display_tree_char {
+            indent.push_str("|-- ");
+        }
+
+        indent
+    }
+
+    fn fmt_graph(
+        &self,
+        f: &mut Formatter<'_>,
+        top_level_edges: &[EdgeReference<ProblemEdge>],
+        top_level_indent: bool,
+    ) -> fmt::Result {
         pub enum DisplayOp {
             Requirement(MatchSpecId, Vec<EdgeIndex>),
             Candidate(NodeIndex),
         }
 
-        writeln!(f, "The following packages are incompatible")?;
+        let graph = &self.graph.graph;
+        let installable_nodes = &self.installable_set;
+        let mut reported: HashSet<SolvableId> = HashSet::new();
 
         // Note: we are only interested in requires edges here
-        let mut stack = graph
-            .edges(self.graph.root_node)
+        let mut stack = top_level_edges
+            .iter()
             .filter(|e| e.weight().try_requires().is_some())
             .group_by(|e| e.weight().requires())
             .into_iter()
@@ -446,7 +507,7 @@ impl fmt::Display for DisplayUnsat<'_> {
             .map(|(match_spec_id, edges)| (DisplayOp::Requirement(match_spec_id, edges), 0))
             .collect::<Vec<_>>();
         while let Some((node, depth)) = stack.pop() {
-            let indent = " ".repeat(depth * 4);
+            let indent = Self::get_indent(depth, top_level_indent);
 
             match node {
                 DisplayOp::Requirement(match_spec_id, edges) => {
@@ -464,19 +525,19 @@ impl fmt::Display for DisplayUnsat<'_> {
                     if missing {
                         // No candidates for requirement
                         if depth == 0 {
-                            writeln!(f, "{indent}|-- No candidates where found for {req}.")?;
+                            writeln!(f, "{indent}No candidates where found for {req}.")?;
                         } else {
-                            writeln!(f, "{indent}|-- {req}, for which no candidates where found.",)?;
+                            writeln!(f, "{indent}{req}, for which no candidates where found.",)?;
                         }
                     } else if installable {
                         // Package can be installed (only mentioned for top-level requirements)
                         if depth == 0 {
                             writeln!(
                                 f,
-                                "|-- {req} can be installed with any of the following options:"
+                                "{indent}{req} can be installed with any of the following options:"
                             )?;
                         } else {
-                            writeln!(f, "{indent}|-- {req}, which can be installed with any of the following options:")?;
+                            writeln!(f, "{indent}{req}, which can be installed with any of the following options:")?;
                         }
 
                         stack.extend(
@@ -495,9 +556,9 @@ impl fmt::Display for DisplayUnsat<'_> {
                     } else {
                         // Package cannot be installed (the conflicting requirement is further down the tree)
                         if depth == 0 {
-                            writeln!(f, "|-- {req} cannot be installed because there are no viable options:")?;
+                            writeln!(f, "{indent}{req} cannot be installed because there are no viable options:")?;
                         } else {
-                            writeln!(f, "{indent}|-- {req}, which cannot be installed because there are no viable options:")?;
+                            writeln!(f, "{indent}{req}, which cannot be installed because there are no viable options:")?;
                         }
 
                         stack.extend(edges.iter().map(|&e| {
@@ -536,9 +597,9 @@ impl fmt::Display for DisplayUnsat<'_> {
                     let is_leaf = graph.edges(candidate).next().is_none();
 
                     if is_leaf {
-                        writeln!(f, "{indent}|-- {} {version}", solvable.record.name)?;
+                        writeln!(f, "{indent}{} {version}", solvable.record.name)?;
                     } else if already_installed {
-                        writeln!(f, "{indent}|-- {} {version}, which conflicts with the versions reported above.", solvable.record.name)?;
+                        writeln!(f, "{indent}{} {version}, which conflicts with the versions reported above.", solvable.record.name)?;
                     } else if constrains_conflict {
                         let match_specs = graph
                             .edges(candidate)
@@ -552,22 +613,23 @@ impl fmt::Display for DisplayUnsat<'_> {
 
                         writeln!(
                             f,
-                            "{indent}|-- {} {version} would require",
+                            "{indent}{} {version} would require",
                             solvable.record.name
                         )?;
 
+                        let indent = Self::get_indent(depth + 1, top_level_indent);
                         for &match_spec_id in match_specs {
                             let match_spec = self.pool.resolve_match_spec(match_spec_id);
                             writeln!(
                                 f,
-                                "{indent}    |-- {} , which conflicts with any installable versions previously reported",
+                                "{indent}{} , which conflicts with any installable versions previously reported",
                                 match_spec
                             )?;
                         }
                     } else {
                         writeln!(
                             f,
-                            "{indent}|-- {} {version} would require",
+                            "{indent}{} {version} would require",
                             solvable.record.name
                         )?;
                         let requirements = graph
@@ -594,25 +656,47 @@ impl fmt::Display for DisplayUnsat<'_> {
             }
         }
 
-        // Report conflicts caused by locked dependencies
-        for e in graph.edges(self.graph.root_node) {
-            let conflict = match e.weight() {
-                ProblemEdge::Requires(_) => continue,
-                ProblemEdge::Conflict(conflict) => conflict,
-            };
+        Ok(())
+    }
+}
 
-            // The only possible conflict at the root level is a Locked conflict
-            let locked_id = match conflict {
-                Conflict::Constrains(_) | Conflict::ForbidMultipleInstances => unreachable!(),
-                &Conflict::Locked(solvable_id) => solvable_id,
-            };
+impl fmt::Display for DisplayUnsat<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let (top_level_missing, top_level_conflicts): (Vec<_>, _) = self
+            .graph
+            .graph
+            .edges(self.graph.root_node)
+            .partition(|e| self.missing_set.contains(&e.target()));
 
-            let locked = self.pool.resolve_solvable(locked_id);
-            writeln!(
-                f,
-                "|-- {} {} is locked, but another version is required as reported above",
-                locked.record.name, locked.record.version
-            )?;
+        if !top_level_missing.is_empty() {
+            self.fmt_graph(f, &top_level_missing, false)?;
+        }
+
+        if !top_level_conflicts.is_empty() {
+            writeln!(f, "The following packages are incompatible")?;
+            self.fmt_graph(f, &top_level_conflicts, true)?;
+
+            // Conflicts caused by locked dependencies
+            let indent = Self::get_indent(0, true);
+            for e in self.graph.graph.edges(self.graph.root_node) {
+                let conflict = match e.weight() {
+                    ProblemEdge::Requires(_) => continue,
+                    ProblemEdge::Conflict(conflict) => conflict,
+                };
+
+                // The only possible conflict at the root level is a Locked conflict
+                let locked_id = match conflict {
+                    Conflict::Constrains(_) | Conflict::ForbidMultipleInstances => unreachable!(),
+                    &Conflict::Locked(solvable_id) => solvable_id,
+                };
+
+                let locked = self.pool.resolve_solvable(locked_id);
+                writeln!(
+                    f,
+                    "{indent}{} {} is locked, but another version is required as reported above",
+                    locked.record.name, locked.record.version
+                )?;
+            }
         }
 
         Ok(())
