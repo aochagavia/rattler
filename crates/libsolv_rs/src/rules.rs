@@ -585,4 +585,12 @@ mod test {
             assert_eq!(rule1.next_watches, [RuleId::new(2), RuleId::null()])
         }
     }
+
+    #[test]
+    fn test_rule_size() {
+        // This test is here to ensure we don't increase the size of `Rule` by accident, as we are
+        // creating thousands of instances. Note: libsolv manages to bring down the size to 24, so
+        // there is probably room for improvement.
+        assert_eq!(std::mem::size_of::<Rule>(), 32);
+    }
 }
