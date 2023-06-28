@@ -317,7 +317,7 @@ impl ProblemGraph {
                 .collect();
             let successors: Vec<_> = graph
                 .edges(node_id)
-                .map(|e| (e.target(), *e.weight()))
+                .map(|e| e.target())
                 .sorted_unstable()
                 .collect();
 
