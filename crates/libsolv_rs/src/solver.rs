@@ -862,9 +862,9 @@ impl<'a> Solver<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::id::RepoId;
     use rattler_conda_types::{PackageRecord, Version};
     use std::str::FromStr;
-    use crate::id::RepoId;
 
     fn package(name: &str, version: &str, deps: &[&str], constrains: &[&str]) -> PackageRecord {
         PackageRecord {

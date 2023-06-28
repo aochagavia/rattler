@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use itertools::Itertools;
 use petgraph::graph::{DiGraph, EdgeIndex, NodeIndex};
-use petgraph::visit::{Bfs, EdgeRef};
+use petgraph::visit::{Bfs, DfsPostOrder, EdgeRef};
 use petgraph::Direction;
 
 use crate::id::{MatchSpecId, RuleId, SolvableId};
@@ -179,7 +179,7 @@ impl Problem {
         ProblemGraph {
             graph,
             root_node,
-            unresolved_dependency_node: unresolved_node,
+            unresolved_node,
         }
     }
 
@@ -206,7 +206,7 @@ impl Problem {
 pub struct ProblemGraph {
     graph: DiGraph<ProblemNode, ProblemEdge>,
     root_node: NodeIndex,
-    unresolved_dependency_node: Option<NodeIndex>,
+    unresolved_node: Option<NodeIndex>,
 }
 
 impl ProblemGraph {
@@ -325,44 +325,50 @@ impl ProblemGraph {
     }
 
     fn get_installable_set(&self) -> HashSet<NodeIndex> {
-        let mut non_installable: HashSet<NodeIndex> = HashSet::new();
+        let mut installable = HashSet::new();
 
-        // Definition: a package is installable if all paths from it to the graph's leaves pass
-        // through non-conflicting edges (i.e. each dependency, and each dependency's dependencies,
-        // etc, can be installed)
+        // Definition: a package is installable if it does not have any outgoing conflicting edges
+        // and if each of its dependencies has at least one installable option.
 
-        // Gather the starting set of conflicting edges:
-        // * Edges into the unresolved dependency node
-        // * Edges equal to `ProblemEdge::Conflict`
-        let mut conflicting_edges = Vec::new();
-
-        if let Some(unresolved_nx) = self.unresolved_dependency_node {
-            conflicting_edges.extend(
-                self.graph
-                    .edges_directed(unresolved_nx, Direction::Incoming),
-            );
-        }
-
-        conflicting_edges.extend(
-            self.graph
-                .edge_references()
-                .filter(|e| matches!(e.weight(), ProblemEdge::Conflict(..))),
-        );
-
-        // Propagate conflicts up the graph
-        while let Some(edge) = conflicting_edges.pop() {
-            let source = edge.source();
-            if non_installable.insert(source) {
-                // Visited for the first time, so make sure the predecessors are also marked as non-installable
-                conflicting_edges.extend(self.graph.edges_directed(source, Direction::Incoming));
+        // Algorithm: propagate installability bottom-up
+        let mut dfs = DfsPostOrder::new(&self.graph, self.root_node);
+        'outer_loop: while let Some(nx) = dfs.next(&self.graph) {
+            if self.unresolved_node == Some(nx) {
+                // The unresolved node isn't installable
+                continue;
             }
+
+            let outgoing_conflicts = self
+                .graph
+                .edges_directed(nx, Direction::Outgoing)
+                .any(|e| matches!(e.weight(), ProblemEdge::Conflict(_)));
+            if outgoing_conflicts {
+                // Nodes with outgoing conflicts aren't installable
+                continue;
+            }
+
+            // Edges grouped by dependency
+            let dependencies = self
+                .graph
+                .edges_directed(nx, Direction::Outgoing)
+                .map(|e| match e.weight() {
+                    ProblemEdge::Requires(match_spec_id) => (match_spec_id, e.target()),
+                    ProblemEdge::Conflict(_) => unreachable!(),
+                })
+                .group_by(|(&match_spec_id, _)| match_spec_id);
+
+            for (_, mut deps) in &dependencies {
+                if deps.all(|(_, target)| !installable.contains(&target)) {
+                    // No installable options for this dep
+                    continue 'outer_loop;
+                }
+            }
+
+            // The package is installable!
+            installable.insert(nx);
         }
 
-        // Installable packages are all nodes that were not marked as non-installable
-        self.graph
-            .node_indices()
-            .filter(|nx| !non_installable.contains(nx))
-            .collect()
+        installable
     }
 }
 
