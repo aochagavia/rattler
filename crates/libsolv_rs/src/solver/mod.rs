@@ -2,11 +2,12 @@ use crate::id::{MatchSpecId, StringId};
 use crate::id::{RuleId, SolvableId};
 use crate::pool::Pool;
 use crate::problem::Problem;
+use crate::solvable::{Solvable, SolvableInner};
 use crate::solve_jobs::SolveJobs;
 
 use rattler_conda_types::MatchSpec;
-use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use decision::Decision;
 use decision_tracker::DecisionTracker;
@@ -87,16 +88,14 @@ impl<'a> Solver<'a> {
             favored_map.insert(name_id, favored_id);
         }
 
-        // Initialize the root solvable with the requested packages as dependencies
-        let mut visited_solvables = HashSet::default();
+        // Populate the root solvable with the requested packages
         for match_spec in &jobs.install {
             let match_spec_id = self.pool.intern_matchspec(match_spec.to_string());
-            let root_solvable = self.pool.root_solvable_mut();
-            root_solvable.push(match_spec_id);
-
-            // Recursively add rules for the current dep
-            self.add_rules_for_root_dep(&mut visited_solvables, &favored_map, match_spec_id);
+            self.pool.root_solvable_mut().push(match_spec_id);
         }
+
+        // Create rules for root's dependencies, and their dependencies, and so forth
+        self.add_rules_for_root_dep(&favored_map);
 
         // Initialize rules ensuring only a single candidate per package name is installed
         for candidates in self.pool.packages_by_name.values() {
@@ -154,40 +153,21 @@ impl<'a> Solver<'a> {
         Ok(Transaction { steps })
     }
 
-    fn add_rules_for_root_dep(
-        &mut self,
-        visited: &mut HashSet<SolvableId>,
-        favored_map: &HashMap<StringId, SolvableId>,
-        dep: MatchSpecId,
-    ) {
-        let mut candidate_stack = Vec::new();
+    fn add_rules_for_root_dep(&mut self, favored_map: &HashMap<StringId, SolvableId>) {
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
 
-        // Gather direct candidates for the dependency
-        {
-            let candidates = Pool::get_candidates(
-                &self.pool.match_specs,
-                &self.pool.strings_to_ids,
-                &self.pool.solvables,
-                &self.pool.packages_by_name,
-                &mut self.pool.match_spec_to_candidates,
-                favored_map,
-                dep,
-            );
-            for &candidate in candidates {
-                if visited.insert(candidate) {
-                    candidate_stack.push(candidate);
-                }
-            }
-        }
+        queue.push_back(SolvableId::root());
 
-        // Process candidates, adding their dependencies recursively
-        while let Some(candidate) = candidate_stack.pop() {
-            let solvable = self.pool.solvables[candidate.index()].package();
+        while let Some(solvable_id) = queue.pop_front() {
+            let (deps, constrains) = match &self.pool.solvables[solvable_id.index()].inner {
+                SolvableInner::Root(deps) => (deps, &[] as &[_]),
+                SolvableInner::Package(pkg) => (&pkg.dependencies, pkg.constrains.as_slice()),
+            };
 
-            // Requires
-            for &dep in &solvable.dependencies {
-                // Ensure the candidates have their rules added
-                let dep_candidates = Pool::get_candidates(
+            // Enqueue the candidates of the dependencies
+            for &dep in deps {
+                let candidates = Pool::get_candidates(
                     &self.pool.match_specs,
                     &self.pool.strings_to_ids,
                     &self.pool.solvables,
@@ -197,22 +177,25 @@ impl<'a> Solver<'a> {
                     dep,
                 );
 
-                for &dep_candidate in dep_candidates {
-                    if visited.insert(dep_candidate) {
-                        candidate_stack.push(dep_candidate);
+                for &candidate in candidates {
+                    // Note: we skip candidates we have already seen
+                    if visited.insert(candidate) {
+                        queue.push_back(candidate);
                     }
                 }
+            }
 
-                // Create requires rule
+            // Requires
+            for &dep in deps {
                 self.rules.push(Rule::new(
-                    RuleKind::Requires(candidate, dep),
+                    RuleKind::Requires(solvable_id, dep),
                     &self.learnt_rules,
                     &self.pool,
                 ));
             }
 
             // Constrains
-            for &dep in &solvable.constrains {
+            for &dep in constrains {
                 let dep_forbidden = Pool::get_forbidden(
                     &self.pool.match_specs,
                     &self.pool.strings_to_ids,
@@ -225,20 +208,13 @@ impl<'a> Solver<'a> {
 
                 for dep in dep_forbidden {
                     self.rules.push(Rule::new(
-                        RuleKind::Constrains(candidate, dep),
+                        RuleKind::Constrains(solvable_id, dep),
                         &self.learnt_rules,
                         &self.pool,
                     ));
                 }
             }
         }
-
-        // Root has a requirement on this match spec
-        self.rules.push(Rule::new(
-            RuleKind::Requires(SolvableId::root(), dep),
-            &self.learnt_rules,
-            &self.pool,
-        ));
     }
 
     fn run_sat(
@@ -1020,33 +996,14 @@ mod test {
         let mut solver = Solver::new(pool);
         let solved = solver.solve(install(&["asdf", "efgh"])).unwrap();
 
+        use std::fmt::Write;
+        let mut display_result = String::new();
         for &(solvable_id, _) in &solved.steps {
             let solvable = solver.pool().resolve_solvable_inner(solvable_id).display();
-            println!("Install {solvable}");
+            writeln!(display_result, "{solvable}").unwrap();
         }
 
-        assert_eq!(solved.steps.len(), 3);
-
-        let solvable = solver
-            .pool
-            .resolve_solvable_inner(solved.steps[0].0)
-            .package();
-        assert_eq!(solvable.record.name, "conflicting");
-        assert_eq!(solvable.record.version.to_string(), "1.0.0");
-
-        let solvable = solver
-            .pool
-            .resolve_solvable_inner(solved.steps[1].0)
-            .package();
-        assert_eq!(solvable.record.name, "asdf");
-        assert_eq!(solvable.record.version.to_string(), "1.2.3");
-
-        let solvable = solver
-            .pool
-            .resolve_solvable_inner(solved.steps[2].0)
-            .package();
-        assert_eq!(solvable.record.name, "efgh");
-        assert_eq!(solvable.record.version.to_string(), "4.5.7");
+        insta::assert_snapshot!(display_result);
     }
 
     #[test]
