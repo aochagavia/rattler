@@ -268,6 +268,18 @@ pub fn link_file(
     } else if let Some(sha256) = path_json_entry.sha256 {
         sha256
     } else {
+        if destination_path.is_symlink() {
+            println!("Compute sha for symlinked file: {}", destination_path.display());
+            let symlink_target_path = std::fs::read_link(&destination_path).unwrap();
+            println!("* File path = {}", destination_path.display());
+            println!("* Target path = {}", symlink_target_path.display());
+            if symlink_target_path.exists() {
+                println!("All is well: the target path exists")
+            } else {
+                println!("Warning: target path does not exist (yet)! If you get lucky it will be created before the SHA is calculated. Otherwise this is going to blow up!");
+            }
+        }
+
         rattler_digest::compute_file_digest::<Sha256>(&destination_path)
             .map_err(LinkFileError::FailedToOpenDestinationFile)?
     };
